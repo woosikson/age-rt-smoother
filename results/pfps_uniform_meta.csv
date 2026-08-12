@@ -1,0 +1,3 @@
+scenario,Np,weight,L,ps_rt_mape,pf_rt_mape,ps_obs_mape,pf_obs_mape
+step,100000,nb30,16,4.4563,11.5351,1.9850,1.9850
+sin,100000,nb30,16,0.7881,6.8381,1.5258,1.5258

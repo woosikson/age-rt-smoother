@@ -1,0 +1,3 @@
+resample,Rj MAPE (%),95% coverage (%)
+every step,1.24,100
+adaptive (ESS < Np/2),1.83,100
