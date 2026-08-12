@@ -205,7 +205,7 @@ pA <- ggplot(conf, aes(day, incidence_per100k, colour = age_group, linewidth = a
   scale_x_continuous(expand = expansion(mult = c(0.01, 0.01))) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05)),
                      labels = scales::label_comma()) +
-  labs(x = NULL, y = "Cases (per 100,000)") +
+  labs(x = NULL, y = NULL) +
   pub_theme() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
 pB <- ggplot(rt, aes(day, Rt, colour = age_group, linewidth = age_group)) +
@@ -214,12 +214,24 @@ pB <- ggplot(rt, aes(day, Rt, colour = age_group, linewidth = age_group)) +
   scale_x_continuous(expand = expansion(mult = c(0.01, 0.01))) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
   coord_cartesian(ylim = c(0, max(3, max(rt$Rt) * 1.05))) +
-  labs(x = "Day", y = LAB_RJT()) +
+  labs(x = "Day", y = NULL) +
   pub_theme() + theme(legend.position = "none")
 
-fig2 <- plot_grid(pA, pB, ncol = 1, align = "v", axis = "lr", rel_heights = c(1, 1),
-                  labels = c("A", "B"), label_fontfamily = FONT, label_size = 12 * FIG_K,
-                  label_fontface = "bold")
+# The two panels have tick labels of very different widths ("4,000" vs "3"), and stacked panels
+# are aligned on the panel edge, so a y title left inside each panel would sit at a different x.
+# Both titles are therefore drawn in one shared column, which puts them on the same vertical line.
+# The spacer under the lower title offsets the x axis of panel B, so each title stays centred on
+# its own panel.
+y_title <- function(lab) ggdraw() +
+  draw_label(lab, angle = 90, fontfamily = FONT, size = 9 * FIG_K * r_mult() + FIG_D$title)
+fig2_body <- plot_grid(pA, pB, ncol = 1, align = "v", axis = "lr", rel_heights = c(1, 1),
+                       labels = c("A", "B"), label_fontfamily = FONT, label_size = 12 * FIG_K,
+                       label_fontface = "bold")
+fig2_titles <- plot_grid(y_title("Cases (per 100,000)"),
+                         plot_grid(y_title(LAB_RJT()), NULL, ncol = 1, rel_heights = c(1, 0.16)),
+                         ncol = 1, rel_heights = c(1, 1))
+# the empty middle column is the gap between the titles and panel A's tick labels
+fig2 <- plot_grid(fig2_titles, NULL, fig2_body, nrow = 1, rel_widths = c(0.045, 0.022, 1))
 save_wilke(fig2, file.path(outdir, "fig2_true"), width = 6.5, height = 6.9)  # each sub-panel about 2.0:1
 
 # ═════════════════════════════════════════════════════════════════════
@@ -321,7 +333,9 @@ if (file.exists(psf)) {
     labs(x = "Day", y = "ESS") + pub_theme()
   save_wilke(p6, file.path(outdir, "fig_ps_adaptive_monitor"), width = 6.5, height = 3.0)
 
-  use_k(1.35)                                 # Figure 3
+  # rmult = 1: the grid is dense, so the y title is not enlarged here. Both axis titles are then at
+  # the common 9 pt nominal, and the age subtitles are set to the same size (see mk_panel below).
+  use_k(1.35, rmult = 1)                      # Figure 3
   # ── combined 4x3 panel: age group x {cases (top), R_j (bottom)}, in two blocks of three ──
   #   age colour = smoother median with 95% CrI band, truth in black; cases share one range
   # age-group population, recovered from the incidence and per-100k columns to avoid drift
@@ -358,8 +372,11 @@ if (file.exists(psf)) {
         labs(x = NULL, y = if (show_ytitle) LAB_RJT() else NULL)
     }
     p <- p + scale_x_continuous(expand = expansion(mult = c(0.01, 0.02))) + pub_theme(8)
+    # the age subtitle is set at the axis-title size (a fixed 9 pt would print far smaller, since
+    # the canvas is reduced in the article and only sizes carrying FIG_K follow that reduction)
     if (!is.null(title)) p <- p + ggtitle(title) +
-      theme(plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = margin(b = 1)))
+      theme(plot.title = element_text(size = 9 * FIG_K + FIG_D$title, face = "bold", hjust = 0.5,
+                                      margin = margin(b = 1)))
     if (!show_yticks) p <- p + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
     if (show_x) p <- p + labs(x = "Day")
     else p <- p + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
@@ -367,11 +384,27 @@ if (file.exists(psf)) {
     p
   }
   b1 <- AGE[1:3]; b2 <- AGE[4:6]
-  r1 <- lapply(seq_along(b1), function(i) mk_panel(b1[i], "cases", rj_top, i == 1, i == 1, FALSE, b1[i]))
-  r2 <- lapply(seq_along(b1), function(i) mk_panel(b1[i], "rj", rj_top, i == 1, i == 1, FALSE))
-  r3 <- lapply(seq_along(b2), function(i) mk_panel(b2[i], "cases", rj_bot, i == 1, i == 1, FALSE, b2[i]))
-  r4 <- lapply(seq_along(b2), function(i) mk_panel(b2[i], "rj", rj_bot, i == 1, i == 1, TRUE))
-  gmain <- plot_grid(plotlist = c(r1, r2, r3, r4), ncol = 3, align = "hv", axis = "tblr")
+  # The four y titles are drawn once in a column of their own so that they share one baseline: a
+  # title attached to its own panel sits next to its own tick labels, which are wider in the cases
+  # rows ("4,000") than in the R_j rows ("3"), and the two would not line up.
+  # The grid is then built column by column rather than as one 4 x 3 block. Aligning all twelve
+  # panels at once makes every cell reserve the axis width of column 1, which leaves columns 2 and 3
+  # with a wide empty gutter; per-column assembly aligns the panels within a column and gives the
+  # spare width back to the panels (rel_widths compensates for column 1 carrying the tick labels).
+  mkcol <- function(k) plot_grid(
+    mk_panel(b1[k], "cases", rj_top, FALSE, k == 1, FALSE, b1[k]),
+    mk_panel(b1[k], "rj",    rj_top, FALSE, k == 1, FALSE),
+    mk_panel(b2[k], "cases", rj_bot, FALSE, k == 1, FALSE, b2[k]),
+    mk_panel(b2[k], "rj",    rj_bot, FALSE, k == 1, TRUE),
+    ncol = 1, align = "v", axis = "lr")
+  gcols <- plot_grid(mkcol(1), mkcol(2), mkcol(3), nrow = 1, rel_widths = c(1.16, 1, 1))
+  # spacers put each title beside its own panel: the cases rows carry a bold age title above them,
+  # the last row the x axis below it
+  ttl <- function(lab, above = 0, below = 0)
+    plot_grid(NULL, y_title(lab), NULL, ncol = 1, rel_heights = c(max(above, 1e-6), 1, max(below, 1e-6)))
+  gttl <- plot_grid(ttl("Cases (per 100,000)", above = 0.09), ttl(LAB_RJT()),
+                    ttl("Cases (per 100,000)", above = 0.09), ttl(LAB_RJT(), below = 0.22), ncol = 1)
+  gmain <- plot_grid(gttl, NULL, gcols, nrow = 1, rel_widths = c(0.030, 0.010, 1))
   # manual legend: truth (black dotted), smoother median (six colours), renewal (black dashed), CrI band
   leg <- leg_row(list(
     list(kind = "line",  label = "Truth",     colour = "black", lwd = 0.6, lty = "dotted"),
@@ -493,8 +526,11 @@ if (file.exists(wsf)) {
       p <- p + scale_colour_manual(values = wcol) + scale_fill_manual(values = wcol) +
         scale_x_continuous(expand = expansion(mult = c(0.01, 0.02))) + pub_theme(8) +
         theme(legend.position = "none")
+      # subtitle scaled like the axis titles (as in Figure 3), plus the per-figure offset that keeps
+      # it the largest element of the panel here: subtitle > axis title > tick
       if (!is.null(title)) p <- p + ggtitle(title) +
-        theme(plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = margin(b = 1)))
+        theme(plot.title = element_text(size = 9 * FIG_K + FIG_D$strip, face = "bold", hjust = 0.5,
+                                        margin = margin(b = 1)))
       if (!show_yticks) p <- p + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
       if (show_x) p <- p + labs(x = "Day")
       else p <- p + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
@@ -502,11 +538,20 @@ if (file.exists(wsf)) {
       p
     }
     b1 <- AGE[1:3]; b2 <- AGE[4:6]
-    wr1 <- lapply(seq_along(b1), function(i) mk_wpanel(b1[i], "cases", rjw_top, i == 1, i == 1, FALSE, b1[i]))
-    wr2 <- lapply(seq_along(b1), function(i) mk_wpanel(b1[i], "rj", rjw_top, i == 1, i == 1, FALSE))
-    wr3 <- lapply(seq_along(b2), function(i) mk_wpanel(b2[i], "cases", rjw_bot, i == 1, i == 1, FALSE, b2[i]))
-    wr4 <- lapply(seq_along(b2), function(i) mk_wpanel(b2[i], "rj", rjw_bot, i == 1, i == 1, TRUE))
-    wmain <- plot_grid(plotlist = c(wr1, wr2, wr3, wr4), ncol = 3, align = "hv", axis = "tblr")
+    # assembled as Figure 3: y titles in one shared column, and the grid built column by column so
+    # that columns 2 and 3 do not reserve the axis width of column 1
+    wcol_k <- function(k) plot_grid(
+      mk_wpanel(b1[k], "cases", rjw_top, FALSE, k == 1, FALSE, b1[k]),
+      mk_wpanel(b1[k], "rj",    rjw_top, FALSE, k == 1, FALSE),
+      mk_wpanel(b2[k], "cases", rjw_bot, FALSE, k == 1, FALSE, b2[k]),
+      mk_wpanel(b2[k], "rj",    rjw_bot, FALSE, k == 1, TRUE),
+      ncol = 1, align = "v", axis = "lr")
+    wcols <- plot_grid(wcol_k(1), wcol_k(2), wcol_k(3), nrow = 1, rel_widths = c(1.16, 1, 1))
+    wttl <- function(lab, above = 0, below = 0)
+      plot_grid(NULL, y_title(lab), NULL, ncol = 1, rel_heights = c(max(above, 1e-6), 1, max(below, 1e-6)))
+    wgttl <- plot_grid(wttl("Cases (per 100,000)", above = 0.09), wttl(LAB_RJT()),
+                       wttl("Cases (per 100,000)", above = 0.09), wttl(LAB_RJT(), below = 0.22), ncol = 1)
+    wmain <- plot_grid(wgttl, NULL, wcols, nrow = 1, rel_widths = c(0.030, 0.010, 1))
     wleg <- leg_row(list(
       list(kind = "point", label = "Observed (noisy)", colour = "grey65"),
       list(kind = "line",  label = "Truth",   colour = "black", lwd = 0.6, lty = "dotted"),
@@ -554,7 +599,9 @@ POP <- c("0-5" = 1791788, "6-11" = 2707574, "12-17" = 2772098,
          "18-44" = 18023319, "45-64" = 16876969, "65+" = 9267290)   # resident registration population
 # smoother = solid age colour, observed = black dotted, renewal = black dashed, 95% CrI = age band
 make_nhis <- function(nf, rn_col = "black", rn_lty = "42", tag = "", do_tiff = TRUE) {
-  use_k(1.35)                                 # Figure 5
+  # same type setting as Figure 3: no enlargement of the y title on this dense grid, so that both
+  # axis titles and the age subtitles are at the common 9 pt nominal
+  use_k(1.35, rmult = 1)                      # Figure 5
   season <- sub(".*nhis_rt_(\\d+)\\.csv", "\\1", basename(nf))
   d0 <- read_csv(nf, show_col_types = FALSE) %>%
     mutate(age_group = factor(age_group, levels = AGE),
@@ -590,8 +637,10 @@ make_nhis <- function(nf, rn_col = "black", rn_lty = "42", tag = "", do_tiff = T
     }
     p <- p + scale_x_continuous(breaks = brk_days, labels = brk_labs,
                                 expand = expansion(mult = c(0.01, 0.02))) + pub_theme(8)
+    # age subtitle at the axis-title size (see the note in the Figure 3 panel builder)
     if (!is.null(title)) p <- p + ggtitle(title) +
-      theme(plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = margin(b = 1)))
+      theme(plot.title = element_text(size = 9 * FIG_K + FIG_D$title, face = "bold", hjust = 0.5,
+                                      margin = margin(b = 1)))
     if (!show_ytk) p <- p + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
     if (show_x) p <- p + labs(x = "Week")                     # only the bottom row carries the week axis
     else p <- p + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
@@ -599,11 +648,22 @@ make_nhis <- function(nf, rn_col = "black", rn_lty = "42", tag = "", do_tiff = T
     p
   }
   b1 <- AGE[1:3]; b2 <- AGE[4:6]
-  r1 <- lapply(1:3, function(i) mk_np(b1[i], "cases", rj_top, i == 1, i == 1, FALSE, b1[i]))
-  r2 <- lapply(1:3, function(i) mk_np(b1[i], "rj", rj_top, i == 1, i == 1, FALSE))
-  r3 <- lapply(1:3, function(i) mk_np(b2[i], "cases", rj_bot, i == 1, i == 1, FALSE, b2[i]))
-  r4 <- lapply(1:3, function(i) mk_np(b2[i], "rj", rj_bot, i == 1, i == 1, TRUE))
-  gm <- plot_grid(plotlist = c(r1, r2, r3, r4), ncol = 3, align = "hv", axis = "tblr")
+  # assembled exactly as Figure 3: the four y titles in one shared column so that they line up,
+  # and the grid built column by column so that columns 2 and 3 do not reserve the axis width of
+  # column 1 (rel_widths compensates for column 1 carrying the tick labels)
+  ncol_k <- function(k) plot_grid(
+    mk_np(b1[k], "cases", rj_top, FALSE, k == 1, FALSE, b1[k]),
+    mk_np(b1[k], "rj",    rj_top, FALSE, k == 1, FALSE),
+    mk_np(b2[k], "cases", rj_bot, FALSE, k == 1, FALSE, b2[k]),
+    mk_np(b2[k], "rj",    rj_bot, FALSE, k == 1, TRUE),
+    ncol = 1, align = "v", axis = "lr")
+  # 1.10, not the 1.16 of Figure 3: the tick labels here are shorter ("500" against "4,000")
+  ncols <- plot_grid(ncol_k(1), ncol_k(2), ncol_k(3), nrow = 1, rel_widths = c(1.10, 1, 1))
+  nttl <- function(lab, above = 0, below = 0)
+    plot_grid(NULL, y_title(lab), NULL, ncol = 1, rel_heights = c(max(above, 1e-6), 1, max(below, 1e-6)))
+  gttl <- plot_grid(nttl("Cases (per 100,000)", above = 0.09), nttl(LAB_RJT()),
+                    nttl("Cases (per 100,000)", above = 0.09), nttl(LAB_RJT(), below = 0.22), ncol = 1)
+  gm <- plot_grid(gttl, NULL, ncols, nrow = 1, rel_widths = c(0.030, 0.010, 1))
   # manual legend: observed (black dotted), smoother median (six colours), renewal, 95% CrI band
   leg <- leg_row(list(
     list(kind = "line",  label = "Observed",  colour = "black", lwd = 0.6, lty = "dotted"),
@@ -630,7 +690,7 @@ if (file.exists(nf18)) {
     scale_x_continuous(breaks = bd, labels = bl, expand = expansion(mult = c(0.01, 0.01))) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05)),
                        labels = scales::label_comma()) +
-    labs(x = NULL, y = "Cases (per 100,000)") +
+    labs(x = NULL, y = NULL) +
     pub_theme() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
   qB <- ggplot(d18, aes(day, Rj_med, colour = age_group, linewidth = age_group)) +
     geom_hline(yintercept = 1, linetype = "dashed", colour = REF_COL, linewidth = 0.4) +
@@ -638,10 +698,16 @@ if (file.exists(nf18)) {
     scale_x_continuous(breaks = bd, labels = bl, expand = expansion(mult = c(0.01, 0.01))) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     coord_cartesian(ylim = c(0, min(3, max(d18$Rj_med, na.rm = TRUE) * 1.05))) +
-    labs(x = "Week", y = LAB_RJT()) +
+    labs(x = "Week", y = NULL) +
     pub_theme() + theme(legend.position = "none")
-  fig18 <- plot_grid(qA, qB, ncol = 1, align = "v", axis = "lr", rel_heights = c(1, 1),
+  # same layout as Figure 2 (identical canvas and panel structure): the two y titles are drawn in
+  # one shared column so that they line up, with the spacer column between titles and tick labels
+  fig18_body <- plot_grid(qA, qB, ncol = 1, align = "v", axis = "lr", rel_heights = c(1, 1),
                      labels = c("A", "B"), label_fontfamily = FONT, label_size = 12 * FIG_K, label_fontface = "bold")
+  fig18_titles <- plot_grid(y_title("Cases (per 100,000)"),
+                            plot_grid(y_title(LAB_RJT()), NULL, ncol = 1, rel_heights = c(1, 0.16)),
+                            ncol = 1, rel_heights = c(1, 1))
+  fig18 <- plot_grid(fig18_titles, NULL, fig18_body, nrow = 1, rel_widths = c(0.045, 0.022, 1))
   save_wilke(fig18, file.path(outdir, "fig_nhis_overlay_2018"), width = 6.5, height = 6.9)   # each sub-panel about 2.0:1
 }
 
@@ -737,7 +803,7 @@ if (file.exists(im_f)) {
     geom_line(linewidth = 0.55) + age_c + scale_linetype_manual(values = im_lty, guide = lty_g) + xsc +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05)), labels = scales::label_percent(accuracy = 1)) +
     # short title: the rotated long form is taller than the panel once the type is scaled for print
-    labs(x = NULL, y = "Susceptible (%)") +
+    labs(x = NULL, y = NULL) +
     pub_theme() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                         # stack the age and condition legends instead of placing them side by side
                         legend.box = "vertical", legend.spacing.y = unit(1, "pt"),
@@ -745,17 +811,23 @@ if (file.exists(im_f)) {
   gB <- ggplot(d, aes(day, cases * scv(age_group), colour = age_group, linetype = cond)) +
     geom_line(linewidth = 0.55) + age_c + scale_linetype_manual(values = im_lty, guide = "none") + xsc +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05)), labels = scales::label_comma()) +
-    labs(x = NULL, y = "Cases (per 100,000)") +
-    pub_theme() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "none",
-                        axis.title.y = element_text(size = 9 * FIG_K * R_LAB_MULT, margin = margin(r = 8)))
+    labs(x = NULL, y = NULL) +
+    pub_theme() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "none")
   gC <- ggplot(d, aes(day, Rj_med, colour = age_group, linetype = cond)) +
     geom_hline(yintercept = 1, linetype = "dashed", colour = REF_COL, linewidth = 0.4) +
     geom_line(linewidth = 0.55) + age_c + scale_linetype_manual(values = im_lty, guide = "none") + xsc +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     coord_cartesian(ylim = c(0, min(3, max(d$Rj_med, na.rm = TRUE) * 1.05))) +
-    labs(x = "Week", y = LAB_RJT()) + pub_theme() + theme(legend.position = "none")
-  figim <- plot_grid(gA, gB, gC, ncol = 1, align = "v", axis = "lr", labels = c("A", "B", "C"),
+    labs(x = "Week", y = NULL) + pub_theme() + theme(legend.position = "none")
+  # the three y titles are drawn in one shared column so that they line up; the spacers offset the
+  # legend above panel A and the x axis below panel C, so each title stays centred on its own panel
+  im_body <- plot_grid(gA, gB, gC, ncol = 1, align = "v", axis = "lr", labels = c("A", "B", "C"),
                      label_fontfamily = FONT, label_size = 12 * FIG_K, label_fontface = "bold")
+  im_ttl <- plot_grid(plot_grid(NULL, y_title("Susceptible (%)"), ncol = 1, rel_heights = c(0.13, 1)),
+                      y_title("Cases (per 100,000)"),
+                      plot_grid(y_title(LAB_RJT()), NULL, ncol = 1, rel_heights = c(1, 0.13)),
+                      ncol = 1)
+  figim <- plot_grid(im_ttl, NULL, im_body, nrow = 1, rel_widths = c(0.045, 0.022, 1))
   save_wilke(figim, file.path(outdir, "fig_nhis_immun_hseek_overlay_2018"), width = 6.5, height = 9.6)
 }
 
@@ -795,14 +867,19 @@ if (all(file.exists(c(rf_our, rf_raw)))) {
     geom_line(data = casesR, aes(group = age_group, linewidth = RAW), colour = RAWLINE, alpha = 0.85) +
     geom_line(data = casesO, aes(colour = age_group, linewidth = MA)) + age_c +
     scale_linewidth_manual(values = lw_g, name = NULL, guide = cg_lw(2)) +
-    xsc + ysc_c + labs(x = NULL, y = "Cases (per 100,000)") + pub_theme() + no_x
+    xsc + ysc_c + labs(x = NULL, y = NULL) + pub_theme() + no_x
   ovB <- ggplot(mapping = aes(day, val)) + hl +
     geom_line(data = rjR, aes(group = age_group), colour = RAWLINE, linewidth = 0.35, alpha = 0.85) +
     geom_line(data = rjO, aes(colour = age_group), linewidth = 0.85) + age_c +
     xsc + scale_y_continuous(expand = expansion(mult = c(0, 0.05))) + coord_cartesian(ylim = c(0, min(3, rjmax * 1.05))) +
-    labs(x = "Week", y = LAB_RJT()) + pub_theme() + theme(legend.position = "none")
-  save_wilke(plot_grid(ovA, ovB, ncol = 1, align = "v", axis = "lr", labels = c("A", "B"),
-                       label_fontfamily = FONT, label_size = 12 * FIG_K, label_fontface = "bold"),
+    labs(x = "Week", y = NULL) + pub_theme() + theme(legend.position = "none")
+  # y titles in one shared column, as in Figure 2 (same canvas and panel structure)
+  ov_body <- plot_grid(ovA, ovB, ncol = 1, align = "v", axis = "lr", labels = c("A", "B"),
+                       label_fontfamily = FONT, label_size = 12 * FIG_K, label_fontface = "bold")
+  ov_ttl <- plot_grid(plot_grid(NULL, y_title("Cases (per 100,000)"), ncol = 1, rel_heights = c(0.08, 1)),
+                      plot_grid(y_title(LAB_RJT()), NULL, ncol = 1, rel_heights = c(1, 0.16)),
+                      ncol = 1)
+  save_wilke(plot_grid(ov_ttl, NULL, ov_body, nrow = 1, rel_widths = c(0.045, 0.022, 1)),
              file.path(outdir, "fig_nhis_raw_overlay_2018"), width = 6.5, height = 6.9)
 
   # ── (2) 3x2 per age group: R_j median with 95% CrI. The two intervals are nearly the same width,
@@ -882,7 +959,10 @@ if (file.exists(uf)) {
            y = if (show_ytitle) (if (qty == "obs") "Cases" else LAB_RT()) else NULL) +
       pub_theme(9)
     if (qty == "obs") p <- p + scale_y_continuous(labels = scales::label_comma())
-    if (!is.null(title)) p <- p + ggtitle(title) + theme(plot.title = element_text(size = 10, face = "bold", hjust = 0.5))
+    # panel subtitle at the size of the y axis titles (a fixed 10 pt did not follow FIG_K and printed
+    # smaller than every other label); this keeps the subtitle >= axis title > tick hierarchy
+    if (!is.null(title)) p <- p + ggtitle(title) +
+      theme(plot.title = element_text(size = 9 * FIG_K * r_mult(), face = "bold", hjust = 0.5))
     # rows without an x axis also drop the axis LINE, otherwise a stray axis appears under y = 0
     if (!show_x) p <- p + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                                axis.line.x = element_blank())
@@ -890,12 +970,19 @@ if (file.exists(uf)) {
   }
   leg <- get_legend(mk_u("step", "Rt", TRUE, TRUE) +
                     theme(legend.position = "top", legend.direction = "horizontal"))
-  p11 <- mk_u("step", "obs", FALSE, TRUE, "Step")        + theme(legend.position = "none")
+  p11 <- mk_u("step", "obs", FALSE, FALSE, "Step")       + theme(legend.position = "none")
   p12 <- mk_u("sin",  "obs", FALSE, FALSE, "Sinusoidal") + theme(legend.position = "none")
-  p21 <- mk_u("step", "Rt",  TRUE,  TRUE)  + theme(legend.position = "none")
+  p21 <- mk_u("step", "Rt",  TRUE,  FALSE) + theme(legend.position = "none")
   p22 <- mk_u("sin",  "Rt",  TRUE,  FALSE) + theme(legend.position = "none")
-  grid <- plot_grid(p11, p12, p21, p22, ncol = 2, align = "hv", axis = "tblr", labels = c("A", "B", "C", "D"),
+  body <- plot_grid(p11, p12, p21, p22, ncol = 2, align = "hv", axis = "tblr", labels = c("A", "B", "C", "D"),
                     label_fontfamily = FONT, label_size = 12 * FIG_K, label_fontface = "bold")
+  # The two y titles are drawn in one shared column so that they line up (row 1 has the wider tick
+  # labels). align = "hv" gives both rows the same padding — the panel title above and the x axis
+  # below are reserved in each — so the panels sit the same distance above their cell centre and
+  # both titles take the same spacer, rather than one per row.
+  ttl_u <- function(lab) plot_grid(y_title(lab), NULL, ncol = 1, rel_heights = c(1, 0.09))
+  grid <- plot_grid(plot_grid(ttl_u("Cases"), ttl_u(LAB_RT()), ncol = 1),
+                    NULL, body, nrow = 1, rel_widths = c(0.032, 0.020, 1))
   save_wilke(plot_grid(leg, grid, ncol = 1, rel_heights = c(0.06, 1)),
              file.path(outdir, "fig_pfps_uniform"), width = 7.2, height = 5.6)
 }
@@ -939,8 +1026,8 @@ if (length(hm_files) > 0) {
     season    = factor(sprintf("%02d–%02d", start_year %% 100, (start_year + 1) %% 100),
                        levels = sy_lab),                      # the first level is the bottom row (09-10)
     age_group = factor(age_group, levels = AGE,
-                       labels = c("0–5y", "6–11y", "12–17y",
-                                  "18–44y", "45–64y", "65y+")))
+                       labels = c("0–5", "6–11", "12–17",
+                                  "18–44", "45–64", "65+")))
   # x ticks every 8 weeks (56 days), labelled with the KDCA week of that day. Four-week ticks
   # collide once the type is scaled up for print.
   ref <- filter(hm, start_year == 2018) %>% distinct(day, wk)
@@ -954,6 +1041,9 @@ if (length(hm_files) > 0) {
   HM_VALS <- scales::rescale(c(HM_LIMS[1], 0.70, 0.90, 0.97, 1.03, 1.10, 1.35, HM_LIMS[2]), from = HM_LIMS)
   cat(sprintf("fig_nhis_heatmap: legend [%g, %g], R_j data range [%.3f, %.3f]\n",
               HM_LIMS[1], HM_LIMS[2], min(hm$Rj), max(hm$Rj)))
+  # 11 rows in a short panel: label every other season, and the last three in full (the 2019-20 to
+  # 2021-22 gap means the top of the axis is where the labels matter most). Every row keeps its tick.
+  sy_keep <- unique(c(sy_lab[seq(1, length(sy_lab), by = 2)], tail(sy_lab, 3)))
   use_k(1.14)                                 # Figure 7
   p_hm <- ggplot(hm, aes(day, season, fill = Rj)) +
     # geom_tile, not geom_raster: cairo embeds a raster layer as a low-resolution bitmap
@@ -961,14 +1051,14 @@ if (length(hm_files) > 0) {
     geom_tile(colour = NA) +
     facet_wrap(~ age_group, ncol = 3) +
     scale_x_continuous(breaks = brk, labels = lab, expand = c(0, 0)) +
-    scale_y_discrete(expand = c(0, 0)) +
+    scale_y_discrete(expand = c(0, 0), labels = function(s) ifelse(s %in% sy_keep, s, "")) +
     scale_fill_gradientn(colours = HM_COLS, values = HM_VALS, limits = HM_LIMS,
                          oob = scales::squish, breaks = seq(0, 3, by = 0.5),
                          name = LAB_RJT_H(),        # horizontal legend title
                          guide = guide_colourbar(barwidth = 0.6, barheight = 11,
                                                  frame.colour = "grey40", frame.linewidth = 0.3,
                                                  ticks.colour = "grey40")) +
-    labs(x = "Week", y = "Season") + pub_theme(9) +
+    labs(x = "Week", y = "Influenza season") + pub_theme(9) +
     theme(panel.grid = element_blank(),
           # 11 season rows in a short panel: the tick labels are set below the shared rule
           axis.text = element_text(size = 7.8),
@@ -1018,7 +1108,7 @@ if (all(file.exists(file.path(here, "results", sprintf("nhis_rt_%d.csv", S10))))
   s10_case_lim <- c(0, max(s10$obs_pc) * 1.05); s10_rj_lim <- c(0, max(s10$Rj_med) * 1.05)
   # tick labels are set smaller than the shared rule here: 20 sub-panels on one page leave no room
   s10_theme <- function() pub_theme(7) +
-    theme(legend.position = "none", plot.margin = margin(1, 4, 1, 1),
+    theme(legend.position = "none", plot.margin = margin(3, 4, 3, 1),   # top/bottom: air between rows
           axis.text = element_text(size = 9))
   use_k(1.39)                                 # Figure 6
   s10_pan <- function(sea, kind, show_x) {
@@ -1039,18 +1129,25 @@ if (all(file.exists(file.path(here, "results", sprintf("nhis_rt_%d.csv", S10))))
   }
   # A rotated y title repeated on every row would be taller than the row itself, so each quantity
   # is named once, horizontally, above its column.
-  s10_hdr <- function(lab, mult = 1) ggplot() + theme_void() + labs(title = lab) +
-    theme(plot.title = element_text(size = 9 * FIG_K * mult, hjust = 0.5, margin = margin(b = 1),
-                                    family = FONT))
+  # Drawn on a canvas of its own rather than as a plot title, so that the vertical position is set
+  # directly: the two headers are at different point sizes, and a title is placed from the TOP of
+  # its cell, which left the taller one sitting a baseline lower. Centring both boxes puts them on
+  # one line (measured: the two baselines then differ by 1 px at 150 dpi); dy is left for tuning.
+  s10_hdr <- function(lab, mult = 1, dy = 0) ggdraw() +
+    draw_label(lab, fontfamily = FONT, size = 9 * FIG_K * mult, y = 0.55 + dy, vjust = 0.5)
+  # column widths of one block, shared by the header and the data rows: the two spacers are the
+  # gap between the season label and the tick labels, and the gap between the two panels
+  RW <- c(0.10, 0.05, 1, 0.055, 1)
   s10_block <- function(seas) {                 # header + five rows of [season label | cases | R_j]
-    hdr <- plot_grid(NULL, s10_hdr("Cases (per 100,000)"), s10_hdr(LAB_RJT_H(), R_LAB_MULT),
-                     nrow = 1, rel_widths = c(0.09, 1, 1))
+    hdr <- plot_grid(NULL, NULL, s10_hdr("Cases (per 100,000)"),
+                     NULL, s10_hdr(LAB_RJT_H(), R_LAB_MULT),
+                     nrow = 1, rel_widths = RW)
     rows <- lapply(seq_along(seas), function(k) {
       last <- k == length(seas)
       plot_grid(ggdraw() + draw_label(seas[k], fontfamily = FONT, fontface = "bold",
-                                      size = 8 * FIG_K, angle = 90),
-                s10_pan(seas[k], "cases", last), s10_pan(seas[k], "rj", last),
-                nrow = 1, rel_widths = c(0.09, 1, 1), align = "h", axis = "tb")   # wider label column
+                                      size = 10 * FIG_K, angle = 90),
+                NULL, s10_pan(seas[k], "cases", last), NULL, s10_pan(seas[k], "rj", last),
+                nrow = 1, rel_widths = RW, align = "h", axis = "tb")   # wider label column
     })
     hs <- rep(1, length(seas)); hs[length(seas)] <- 1.16   # extra height for the x axis labels on the last row
     plot_grid(hdr, plot_grid(plotlist = rows, ncol = 1, rel_heights = hs),
@@ -1061,7 +1158,8 @@ if (all(file.exists(file.path(here, "results", sprintf("nhis_rt_%d.csv", S10))))
                           theme(legend.position = "top", legend.justification = "center"))
   SL10 <- levels(s10$season)
   fig10 <- plot_grid(s10_leg,
-                     plot_grid(s10_block(SL10[1:5]), s10_block(SL10[6:10]), ncol = 2),
+                     plot_grid(s10_block(SL10[1:5]), NULL, s10_block(SL10[6:10]),
+                               ncol = 3, rel_widths = c(1, 0.05, 1)),
                      ggdraw() + draw_label("Week", fontfamily = FONT, size = 15),
                      ncol = 1, rel_heights = c(0.05, 1, 0.028)) +
     theme(plot.background = element_rect(fill = "white", colour = NA))   # the assembled plot needs an explicit white background
