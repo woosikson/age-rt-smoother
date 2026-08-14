@@ -29,8 +29,9 @@ met <- rd("ps_metrics.csv")
 BASE <- list(Np = 1e5, srw = 0.15, L = "16")               # adopted baseline
 
 # ── Table S1 — fixed window length L (Np=1e5·σ_rw=0.15·every) ────────────────
-#   day-1 unique ancestors are recomputed from ps_degeneracy.csv at Np = 1e6, averaged over age groups
-deg1 <- rd("ps_degeneracy.csv") %>% filter(Np == 1e6, day == 1) %>%
+#   day-1 unique ancestors are recomputed from ps_degeneracy.csv, averaged over age groups, at the
+#   baseline Np so that the whole table (and Figure S3) is one configuration
+deg1 <- rd("ps_degeneracy.csv") %>% filter(Np == BASE$Np, day == 1) %>%
   group_by(L) %>% summarise(uniq_day1 = round(mean(uniq)), .groups = "drop")
 s1 <- met %>%
   filter(Np == BASE$Np, abs(sigma_rw - BASE$srw) < 1e-9, resample == "every") %>%

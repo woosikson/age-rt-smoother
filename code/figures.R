@@ -309,8 +309,10 @@ if (file.exists(psf)) {
     labs(x = expression(sigma[rw])) + pub_theme()
   save_wilke(p4, file.path(outdir, "fig_ps_sigma"), width = 4.4, height = 3.2)
 
-  # path degeneracy: unique ancestors over time, one line per window length
-  degNp <- max(deg$Np)
+  # path degeneracy: unique ancestors over time, one line per window length.
+  # Np = 1e5, the configuration used everywhere else in the paper (the file also holds a 1e6 sweep,
+  # whose curves are the same shape a factor of 10 higher).
+  degNp <- if (any(deg$Np == 1e5)) 1e5 else max(deg$Np)
   dd <- deg %>% filter(Np == degNp) %>% group_by(L, day) %>%
     summarise(uniq = mean(uniq), .groups = "drop") %>%
     mutate(L = factor(L, levels = c("16", "24", "32", "wh")))
@@ -957,7 +959,9 @@ if (file.exists(uf)) {
       scale_linetype_manual(values = c(true = "dotted", PS = "solid", PF = "solid"), guide = "none") +
       labs(x = if (show_x) "Day" else NULL,
            y = if (show_ytitle) (if (qty == "obs") "Cases" else LAB_RT()) else NULL) +
-      pub_theme(9)
+      # top margin: with no panel subtitle the A-D tags would be drawn on top of the highest
+      # tick label, so each panel keeps a strip of space above the plotting area for its tag
+      pub_theme(9) + theme(plot.margin = margin(14, 8, 3, 3))
     if (qty == "obs") p <- p + scale_y_continuous(labels = scales::label_comma())
     # panel subtitle at the size of the y axis titles (a fixed 10 pt did not follow FIG_K and printed
     # smaller than every other label); this keeps the subtitle >= axis title > tick hierarchy
@@ -970,8 +974,9 @@ if (file.exists(uf)) {
   }
   leg <- get_legend(mk_u("step", "Rt", TRUE, TRUE) +
                     theme(legend.position = "top", legend.direction = "horizontal"))
-  p11 <- mk_u("step", "obs", FALSE, FALSE, "Step")       + theme(legend.position = "none")
-  p12 <- mk_u("sin",  "obs", FALSE, FALSE, "Sinusoidal") + theme(legend.position = "none")
+  # no panel subtitles: the scenarios are named in the caption, the panels by their A-D tags
+  p11 <- mk_u("step", "obs", FALSE, FALSE) + theme(legend.position = "none")
+  p12 <- mk_u("sin",  "obs", FALSE, FALSE) + theme(legend.position = "none")
   p21 <- mk_u("step", "Rt",  TRUE,  FALSE) + theme(legend.position = "none")
   p22 <- mk_u("sin",  "Rt",  TRUE,  FALSE) + theme(legend.position = "none")
   body <- plot_grid(p11, p12, p21, p22, ncol = 2, align = "hv", axis = "tblr", labels = c("A", "B", "C", "D"),

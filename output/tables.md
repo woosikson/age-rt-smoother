@@ -2,10 +2,10 @@
 
 | L | Rj MAPE (%) | 95% coverage (%) | uniq_day1 |
 |---|---|---|---|
-| 16 | 1.24 | 100 | 26123 |
-| 24 | 1.25 | 100 | 20039 |
-| 32 | 1.26 | 100 | 16394 |
-| whole history | 1.26 | 100 |  4566 |
+| 16 | 1.24 | 100 | 2616 |
+| 24 | 1.25 | 100 | 2019 |
+| 32 | 1.26 | 100 | 1643 |
+| whole history | 1.26 | 100 |  454 |
 
 ## TableS2 — Observation-likelihood misspecification (MAPE % and 95% coverage %)
 
